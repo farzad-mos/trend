@@ -1,0 +1,880 @@
+%% Load data
+load('satg.mat')
+load('tg1.mat')
+load('F:\Analysis\BS\trend\data\alldata.mat')
+
+
+%% data preparation (monthly mean)
+sacut=satg;
+
+% sort by date
+for k=1:16
+sacut{k} = sortrows(sacut{k},'t','ascend');
+end
+% add monthly category
+for k=1:16
+sacut{k}.ye = year(sacut{k}.t);
+sacut{k}.mo = month(sacut{k}.t);
+sacut{k}.ym=str2num([num2str(sacut{k}.ye),num2str(sacut{k}.mo,'%0.2i')]);
+end
+
+% SA data: find group by catagory
+% mean by monthly category
+for k=1:16
+me=table();
+[x,tm] = findgroups(sacut{k}.ym);
+
+me.dtsa=splitapply(@mean, sacut{k}.sadt,x);
+me.dttg=splitapply(@mean, sacut{k}.tgdt,x);
+me.t=tm;
+sa_mean{k}=me;
+clearvars me x tm
+
+end
+% adding back the time
+for k=1:16
+% a=(sa_mean{k}.t);
+sa_mean{k}.ye=round((sa_mean{k}.t)/100,0);
+sa_mean{k}.mo=round((((sa_mean{k}.t)/100)-round((sa_mean{k}.t)/100,0))*100,0);
+end
+for k=1:16
+sa_mean{k}.time=datetime(sa_mean{k}.ye,sa_mean{k}.mo,1);
+end
+%Perform Differences - detrend 
+for k=1:16
+% sa_mean{k}.sadt_Differences=nan(height(sa_mean{k}),1);
+% sa_mean{k}.sadt_Differences(2:end)= diff(sa_mean{k}.sadt_Linear);
+% me.sadt_Linear=splitapply(@mean, sacut{k}.sadt_Linear,x);
+sa_mean{k}.tg_detrend=detrend(sa_mean{k}.dttg);
+sa_mean{k}.sa_detrend=detrend(sa_mean{k}.dtsa);
+end
+
+
+% TG data: find group by catagory
+% for forcasting comparision
+
+%sort by date & monthly category
+for k=1:16
+tg{k} = sortrows(tg{k},'Time','ascend');
+tg{k}.y = year(tg{k}.Time);
+tg{k}.mo = month(tg{k}.Time);
+tg{k}.da = day(tg{k}.Time);
+tg{k}.ym=str2num([num2str(tg{k}.y),num2str(tg{k}.mo,'%0.2i')]);
+tg{k}.ym2=str2num([num2str(tg{k}.y),num2str(tg{k}.mo,'%0.2i'),num2str(tg{k}.da,'%0.2i')]);
+end
+% monthly mean
+for k=1:16
+me=table();
+[x,tm] = findgroups(tg{k}.ym);
+me.dttg=splitapply(@mean, tg{k}.dt,x);
+me.t=tm;
+tg_mean{k}=me;
+clearvars me x tm
+end
+for k=1:16
+tg_mean{k}.ye=round((tg_mean{k}.t)/100,0);
+tg_mean{k}.mo=round((((tg_mean{k}.t)/100)-round((tg_mean{k}.t)/100,0))*100,0);
+tg_mean{k}.time=datetime(tg_mean{k}.ye,tg_mean{k}.mo,1);
+tg_mean{k}.tg_detrend=detrend(tg_mean{k}.dttg);
+end
+% daily mean
+for k=1:16
+me=table();
+[x,tm] = findgroups(tg{k}.ym2);
+me.dttg=splitapply(@mean, tg{k}.dt,x);
+me.t=tm;
+tg_mean_day{k}=me;
+clearvars me x tm
+end
+for k=1:16
+tg_mean_day{k}.ye=round((tg_mean_day{k}.t)/10000,0);
+tg_mean_day{k}.mo=round( (((tg_mean_day{k}.t)/10000)-round((tg_mean_day{k}.t)/10000,0))*100,0 );
+
+tg_mean_day{k}.da=tg_mean_day{k}.t-str2num([num2str(tg_mean_day{k}.ye),num2str(tg_mean_day{k}.mo,'%0.2i'),repmat(num2str(00,'%0.2i'),height(tg_mean_day{k}),1)]);
+
+tg_mean_day{k}.time=datetime(tg_mean_day{k}.ye,tg_mean_day{k}.mo,tg_mean_day{k}.da);
+tg_mean_day{k}.tg_detrend=detrend(tg_mean_day{k}.dttg);
+end
+
+%% find seasonality
+Fs = 12;
+T = 1/Fs;
+L = length(tg_mean{1, 1}.tg_detrend);
+t = (0:L-1)*T;
+
+
+
+subplot (2,3,1:2)
+plot(t,tg_mean{1, 1}.tg_detrend,'DisplayName','TG_{detrend}','color',[.7 .7 .7],'LineWidth',2)
+hold on
+plot(t,tg_mean{1, 1}.dttg,'-b','LineWidth',2,'DisplayName','TG_{original}')
+tr1=fitlm(t,tg_mean{1, 1}.dttg);
+plot(t,tg_mean{1, 1}.dttg-tg_mean{1, 1}.tg_detrend,'-','color',[0.4660 0.6740 0.1880],'DisplayName',strcat('Linear Trend: ',num2str(tr1.Coefficients.Estimate(2)*10,2),' mm/year'),'LineWidth',1.5)
+
+% 13 month moving avarage
+y = tg_mean{1, 1}.dttg;
+T1 = length(y);
+sW13 = [1/24; repmat(1/12,11,1); 1/24];
+yS = conv(y,sW13,'same');
+yS(1:6) = yS(7); yS(T1-5:T1) = yS(T1-6);
+plot(t,yS,'-','color',[0.6350 0.0780 0.1840],'LineWidth',1.5,'DisplayName','13-month Moving Average');
+
+
+% title("Signal superposition in time domain")
+xlabel("Year number")
+ylabel("DT [cm]")
+xticks(min(t):2:max(t))
+ax=gca; ax.GridAlpha = 0.3; ax.FontSize=20; ax.FontWeight='Bold'; grid on;  ax.FontName='Times New Roman'; %grid minor;
+set(gca,'fontname','Times New Roman','FontSize',20);
+ylim([-50 100]) % check
+legend show
+
+subplot (2,3,3)
+boxchart(tg_mean{1, 1}.mo,tg_mean{1, 1}.tg_detrend,'MarkerStyle','none','WhiskerLineColor','none')
+hold on
+meanWeight = groupsummary(tg_mean{1, 1}.tg_detrend,tg_mean{1, 1}.mo,'mean');
+h(1)=plot(meanWeight,'-r','LineWidth',2,'DisplayName','Monthly Mean DT_{detrend}');
+% boxplot(tg_mean{1, 1}.tg_detrend,tg_mean{1, 1}.mo)
+xticks(1:1:12)
+xlim([0 13])
+ylim([-50 100]) % check
+
+xlabel("Month number")
+legend(h(1))
+ax=gca; ax.GridAlpha = 0.3; ax.FontSize=20; ax.FontWeight='Bold'; grid on;  ax.FontName='Times New Roman'; %grid minor;
+set(gca,'fontname','Times New Roman','FontSize',20);
+box on
+
+% Specify the parameters of a signal with a sampling frequency of 12 Hz (monthly data) and a signal duration of observations.
+
+% Compute the Fourier transform of the signal.
+a=tg_mean{1, 1}.tg_detrend;
+a=a-mean(a);
+
+Y = fft(a.*hann(numel(a)));
+
+% Compute the single-sided amplitude spectrum of the signal.
+
+f = Fs*(0:(L-1)/2)/L;
+P2 = abs(Y/L);
+P1 = P2(1:(L+1)/2);
+P1(2:end) = 2*P1(2:end);
+
+% plot the single-sided spectrum. 
+subplot (2,3,4:6)
+xline(1,'--k','LineWidth',1.5)
+xline(2,'--k','LineWidth',1.5)
+hold on
+plot(f,P1','color',[0.4940 0.1840 0.5560],'LineWidth',2) 
+
+[~,m]=max(P1);
+plot(f(m),P1(m),'v','MarkerFaceColor','red','MarkerEdgeColor','k','MarkerSize',10) 
+[~,n]=find(f==2);
+plot(f(n),P1(n),'v','MarkerFaceColor','red','MarkerEdgeColor','k','MarkerSize',10) 
+
+
+title("Single-Sided Spectrum of DT_T_G")
+xlabel("Period [year]")
+ylabel("Power")
+% xticks(0.25:.25:4)
+xticks([.25 .5 1 2 2.5 4])
+xticklabels(1./[.25 .5 1 2 2.5 4])
+
+ax=gca; ax.GridAlpha = 0.3; ax.FontSize=20; ax.FontWeight='Bold'; grid on;  ax.FontName='Times New Roman'; %grid minor;
+set(gca,'fontname','Times New Roman','FontSize',20);
+box on
+% boxplot(tg_mean{1, 1}.tg_detrend,tg_mean{1, 1}.mo)
+
+clearvars a meanWeight h
+
+%% test detrended data
+
+for k=1:16
+    % stationary test
+h(k,1)=adftest(sa_mean{k}.sa_detrend); % h should be 1
+    % stability test
+h(k,2)=isstable(sa_mean{k}.sa_detrend);% should be 1
+    % Heteroscedasticity test
+h(k,3)=archtest(sa_mean{k}.sa_detrend);% should be 1
+end
+
+for k=1:16
+    % stationary test
+    % no nan value should exist
+h(k,4)=adftest(sa_mean{k}.tg_detrend); % should be 1
+    % stability test
+h(k,5)=isstable(sa_mean{k}.tg_detrend);% should be 1
+    % Heteroscedasticity test
+h(k,6)=archtest(sa_mean{k}.tg_detrend);% should be 1
+end
+
+%% recreate a matrix of data
+
+for k=1:16
+    sa_fill{k}=table();
+    l=1;
+for i=1995:2020
+    for j=1:12
+        
+        sa_fill{k}.mo(l,1)=j;
+        sa_fill{k}.ye(l,1)=i;
+        sa_fill{k}.t=str2num([num2str(sa_fill{k}.ye),num2str(sa_fill{k}.mo,'%0.2i')]);
+        sa_fill{k}.time=datetime(sa_fill{k}.ye,sa_fill{k}.mo,1);
+        sa_fill{k}.dtsa(l,1)=nan;
+        sa_fill{k}.dttg(l,1)=nan;
+        l=l+1;
+    end
+end
+end
+
+% find associated DTs
+for k=1:16
+    for i=1:height(sa_fill{k})
+        if ~isempty(sa_mean{k}.dtsa(sa_mean{k}.t==sa_fill{k}.t(i)))
+            sa_fill{k}.dtsa(i)=sa_mean{k}.dtsa(sa_mean{k}.t==sa_fill{k}.t(i));
+        end
+        if ~isempty(tg_mean{k}.dttg(tg_mean{k}.t==sa_fill{k}.t(i)))
+            sa_fill{k}.dttg(i)=tg_mean{k}.dttg(tg_mean{k}.t==sa_fill{k}.t(i));
+        end
+        
+    end
+    sa_fill{k}.tg_detrend=nan(i,1);
+    sa_fill{k}.trend=nan(i,1);
+    sa_fill{k}.sa_detrend=nan(i,1);
+end
+
+for k=1:16
+    b=[decyear(sa_fill{k}.time),sa_fill{k}.dttg];
+    b=rmmissing(b);
+    [det,tre]=de_trend(b(:,1),b(:,2));
+    sa_fill{k}.tg_detrend(~isnan(sa_fill{k}.dttg))=det;
+    sa_fill{k}.trend(~isnan(sa_fill{k}.dttg))=tre;
+    clearvars tre det
+end
+
+%  recreate trend
+for i=1:16
+sa_fill{i}.trend=fillgaps(sa_fill{i}.trend);
+sa_fill{i}.sa_detrend=sa_fill{k}.dtsa-sa_fill{i}.trend;
+end
+
+% deseaosning
+for k=1:16
+    sa_fill{k}.sst=nan(height(sa_fill{k}),1);
+    c=[decyear(sa_fill{k}.time),sa_fill{k}.sa_detrend];
+    c=rmmissing(c);
+    [a,b]=deseason(c(:,1),c(:,2),6);
+    sa_fill{k}.sst(~isnan(sa_fill{k}.sa_detrend))=b;
+    sa_fill{k}.sst=fillgaps(sa_fill{k}.sst);
+    sa_fill{k}.sa_deseason=sa_fill{k}.sa_detrend-sa_fill{k}.sst;
+    sa_fill{k}.tg_deseason=sa_fill{k}.tg_detrend-sa_fill{k}.sst;
+    clearvars a b c
+end
+
+%% plot one TG-sa
+k=1;
+plot(sa_fill{k}.time,sa_fill{k}.dtsa,'-.o','color',[0 0.4470 0.7410],'DisplayName','SA_{original}','LineWidth',1.5)
+hold on
+plot(sa_fill{k}.time,sa_fill{k}.sa_detrend,'-.om','DisplayName','SA_{detrend}')
+plot(sa_fill{k}.time,sa_fill{k}.sa_deseason,'-.o','color',[0.4660 0.6740 0.1880],'DisplayName','SA_{deseason}','LineWidth',1.5)
+plot(sa_fill{k}.time,sa_fill{k}.trend,'-k','DisplayName','trend','LineWidth',1.5)
+plot(sa_fill{k}.time,sa_fill{k}.sst,'-','color',[0.6350 0.0780 0.1840],'DisplayName','seasonality','LineWidth',1.5)
+plot(sa_fill{k}.time,sa_fill{k}.tg_deseason,'-','color',[.7 .7 .7],'DisplayName','TG_{deseason}','LineWidth',1.5)
+
+ylabel('DT [cm]')
+xlabel([])
+xticks(datetime('01-Jan-1995'):calyears(2):datetime('01-Jan-2020'))
+
+ax=gca; ax.GridAlpha = 0.3; ax.FontSize=20; ax.FontWeight='Bold'; grid on;  ax.FontName='Times New Roman'; %grid minor;
+set(gca,'fontname','Times New Roman','FontSize',20);
+legend show
+
+% pbaspect([1 .5 1]);
+
+%% compare trend
+trend=table();
+for k=1:16
+
+
+figure(k)
+
+plot(decyear(sa_fill{k}.time),sa_fill{k}.dttg,'-','color',[.7 .7 .7],'DisplayName','TG','LineWidth',1.5)
+hold on
+plot(decyear(sa_fill{k}.time),sa_fill{k}.dtsa,'o','color',[0.3010 0.7450 0.9330],'DisplayName','SA','LineWidth',1.5)
+
+
+plot(decyear(sa_fill{k}.time(~isnan(sa_fill{k}.dtsa))),sa_fill{k}.dttg(~isnan(sa_fill{k}.dtsa)),'o','color',[0.4660 0.6740 0.1880],'DisplayName','TG','LineWidth',1.5)
+
+
+% % fill gaps
+% plot(decyear(sa_fill{k}.time),fillgaps(sa_fill{k}.dtsa),'ob','DisplayName','SA_{filled}','LineWidth',1.5)
+% 
+
+tr1=fitlm(decyear(sa_fill{k}.time(5:294)),sa_fill{k}.dttg(5:294));
+plot(decyear(sa_fill{k}.time(5:294)),tr1.Fitted,'-k','DisplayName',strcat('TG_{Linear Trend}: ',num2str(tr1.Coefficients.Estimate(2)*10,2),' mm/year'),'LineWidth',1.5)
+
+
+tr2=fitlm(decyear(sa_fill{k}.time(5:294)),sa_fill{k}.dtsa(5:294));
+plot(decyear(sa_fill{k}.time(5:294)),tr2.Fitted,'-','color',[0 0.4470 0.7410],'DisplayName',strcat('gappy SA_{Linear Trend}: ',num2str(tr2.Coefficients.Estimate(2)*10,2),' mm/year'),'LineWidth',1.5)
+
+tr3=fitlm(decyear(sa_fill{k}.time(~isnan(sa_fill{k}.dtsa))),sa_fill{k}.dttg(~isnan(sa_fill{k}.dtsa)));
+plot(decyear(sa_fill{k}.time(~isnan(sa_fill{k}.dtsa))),tr3.Fitted,'-g','DisplayName',strcat('gappy TG_{Linear Trend}: ',num2str(tr3.Coefficients.Estimate(2)*10,2),' mm/year'),'LineWidth',1.5)
+
+% a=fillgaps(sa_fill{k}.dtsa);
+% tr4=fitlm(decyear(sa_fill{k}.time(5:294)),a((5:294)));
+% plot(decyear(sa_fill{k}.time(5:294)),tr4.Fitted,'-b','DisplayName',strcat('filled SA_{Linear Trend}: ',num2str(tr4.Coefficients.Estimate(2)*10,2),' mm/year'),'LineWidth',1.5)
+
+trend.tg(k,1)=tr1.Coefficients.Estimate(2)*10;
+trend.sa(k,1)=tr2.Coefficients.Estimate(2)*10;
+trend.gappedtg(k,1)=tr3.Coefficients.Estimate(2)*10;
+
+
+xlim([min(decyear(sa_fill{k}.time))-0.1,max(decyear(sa_fill{k}.time))+0.1])
+
+legend show
+
+ax=gca; ax.GridAlpha = 0.3; ax.FontSize=20; ax.FontWeight='Bold'; grid on;  ax.FontName='Times New Roman'; %grid minor;
+set(gca,'fontname','Times New Roman','FontSize',20);
+end
+
+%% trend at TG stations per latitude plot
+
+plot(trend.Lat,trend.tg,'--ok','DisplayName','TG trend')
+hold on
+plot(trend.Lat,trend.gappedtg,'--og','DisplayName','gappy TG trend')
+plot(trend.Lat,trend.sa,'--o','color',[0 0.4470 0.7410],'DisplayName','gappy SA trend')
+
+ax=gca; ax.GridAlpha = 0.3; ax.FontSize=20; ax.FontWeight='Bold'; grid on;  ax.FontName='Times New Roman'; %grid minor;
+set(gca,'fontname','Times New Roman','FontSize',20);
+legend show
+
+%% grid data
+load('LATLON.mat')
+lon = Lon(1:10:end,1:10:end);
+lat = Lat(1:10:end,1:10:end);
+
+
+%% mean per grid
+deltalon=0.5555506/2;
+deltalat=0.3333282/2;
+d=sa_fill{1}(:,1:4);
+load('sa.mat')
+sa.Properties.VariableNames{4} = 'time';
+sa.t=str2num([num2str(sa.year_sa),num2str(month(sa.time),'%0.2i')]);
+
+[m,~]=size(lat);
+
+for i=1:m
+    for j=1:m
+        if ~isnan(lat(i,j))
+            for k=1:height(d)
+            sadtmean(i,j,k)=mean(sa.sadt(sa.t==d.t(k)&sa.lat>=lat(i,j)-deltalat&sa.lat<lat(i,j)+...
+                deltalat&sa.lon>=lon(i,j)-deltalon&sa.lon<lon(i,j)+deltalon),'omitnan');
+            end
+        else
+            sadtmean(i,j,:)=nan(height(d),1);
+        end
+    end
+end
+
+%% calculate BS trend 
+clear bstrend
+
+[m,~]=size(lat);
+ti=decyear(sa_fill{1}.time(5:294));
+
+
+for i=1:m
+    for j=1:m
+        dtsa=squeeze(sadtmean(i,j,:));
+        tr=fitlm(ti,dtsa(5:294));      
+        bstrend(i,j,1)=tr.Coefficients.Estimate(2)*10;
+        clearvars tr dtsa
+    end
+end
+
+
+%% plot BS linear trend
+
+bstrend2=bstrend;
+for i=1:m
+    for j=1:m
+        if bstrend2(i,j)<1
+            bstrend2(i,j)=nan;
+        end
+    end
+end
+
+contourf(bstrend2,100,'edgecolor','none')
+hold on
+scatter(trend.Lon,trend.Lat,200,trend.tg,'filled')
+% colormap turbo
+caxis([1 6])
+%% detrend and deseason sa data
+
+ti=decyear(d.time);
+
+for i=1:m
+    for j=1:m
+        dtsa=squeeze(sadtmean(i,j,:));
+        if ~all(isnan(dtsa))
+            dt_detrend=detrend(fillgaps(dtsa));
+            bs_detrend(i,j,:)=dt_detrend;
+            [a,b]=deseason(ti,dt_detrend,6);
+            bs_deseason(i,j,:)=dt_detrend-fillgaps(b);
+            clearvars dt_detrend dtsa a b
+        else
+            bs_detrend(i,j,:)=nan(height(d),1);
+            bs_deseason(i,j,:)=nan(height(d),1);
+        end
+        
+    end
+end
+
+%% plot 
+
+subplot(1,3,1)
+contourf(bs_detrend(:,:,45)',100,'edgecolor','none')
+subplot(1,3,2)
+contourf(bs_deseason(:,:,45)',100,'edgecolor','none')
+subplot(1,3,3)
+contourf(sadtmean(:,:,45)',100,'edgecolor','none')
+%% test stationary/stability/Heteroscedasticity
+H=1;
+for i=1:m
+    for j=1:m
+        dtsa=squeeze(bs_deseason(i,j,:));
+        if ~all(isnan(dtsa))
+            % stationary test
+            h(H,1)=adftest(dtsa); % h should be 1
+            % stability test
+            h(H,2)=isstable(dtsa);% should be 1
+            % Heteroscedasticity test
+            h(H,3)=archtest(dtsa);% should be 1
+            clearvars dtsa
+            H=H+1;
+        end
+    end
+end
+%% decompositions
+% complete later
+k=1;
+dt_sa=sa_fill{k}.sa_deseason(5:190);
+ti=sa_fill{k}.time(5:190);
+dt_tg=sa_fill{k}.tg_deseason(5:190);
+[imf,residual,info] = emd(dt_sa);
+% [imf,residual,info] = emd(dt_sa,'MaxNumIMF',7);
+% [hs,f,t,imfinsf,imfinse] = hht(imf);
+
+[mra,cfs]  = ewt(dt_sa);
+% hht(mra)
+
+figure(1)
+for i=1:size(imf,2)+2
+subplot(size(imf,2)+2,1,i)
+
+if i==1
+plot(ti,dt_sa,'--*','color',[0.4940 0.1840 0.5560],'LineWidth',.5)
+hold on
+plot(ti,dt_tg,'-','color',[.7 .7 .7])
+hold off
+
+xlim([min(ti)-100,max(ti)+100])
+
+elseif i==size(imf,2)+2
+    plot(ti,residual)
+else
+    plot(ti,imf(:,i-1))
+end
+
+if i==1
+    title('DT_{deseasoned} [cm]')
+    ylabel('DT','FontSize',18,'FontWeight','bold');
+elseif i==size(imf,2)+2
+    ylabel('Residuals','FontSize',18,'FontWeight','bold');
+else
+    ylabel(strcat('IMF',num2str(i)-1),'FontSize',18,'FontWeight','bold');
+end
+
+if i~=size(imf,2)+2
+    xticklabels([])
+end
+
+
+ax=gca; ax.GridAlpha = 0.3; ax.FontSize=18; ax.FontWeight='Bold';  grid on;
+xlim([min(ti)-100,max(ti)+100])
+
+end
+
+
+figure(2)
+for i=1:size(mra,2)+1
+subplot(size(mra,2)+1,1,i)
+if i==1
+plot(ti,dt_sa,'--*','color',[0.4940 0.1840 0.5560],'LineWidth',.5)
+hold on
+plot(ti,dt_tg,'-','color',[.7 .7 .7])
+hold off
+
+xlim([min(ti)-100,max(ti)+100])
+else
+    plot(ti,mra(:,i-1))
+end
+    
+if i==1
+    title('DT_{deseasoned} [cm]')
+    ylabel('DT','FontSize',18,'FontWeight','bold');
+else
+    ylabel(strcat('MRA',num2str(i)-1),'FontSize',18,'FontWeight','bold');
+end
+
+ax=gca; ax.GridAlpha = 0.3; ax.FontSize=18; ax.FontWeight='Bold';  grid on;
+% xlim([min(sa_mean{k}.time)-100,max(sa_mean{k}.time)+100])
+
+end
+%% ACF PACF plot
+k=3;
+dt_sa=sa_fill{k}.sa_deseason(5:190);
+ti=sa_fill{k}.time(5:190);
+dt_tg=sa_fill{k}.tg_deseason(5:190);
+
+
+% Auto-corrolation function (ACF)
+% Identify Series with Serial Correlation
+% Determine whether an MA model is appropriate
+subplot(2,1,1)
+autocorr(dt_sa,'NumLags',30,'NumMA',0)
+ax=gca; ax.GridAlpha = 0.3; ax.FontSize=18; ax.FontWeight='Bold'; grid on;  ax.FontName='Times New Roman'; %grid minor;
+set(gca,'fontname','Times New Roman','FontSize',18);
+xlabel([])
+ylabel('ACF')
+title('DT')
+
+% Partial ACF (PACF)
+% Identify Series with Serial Correlation
+% Identify significant AR lags for model identification.
+subplot(2,1,2)
+parcorr(dt_sa,'NumAR',0,'NumLags',30)
+ax=gca; ax.GridAlpha = 0.3; ax.FontSize=18; ax.FontWeight='Bold'; grid on;  ax.FontName='Times New Roman'; %grid minor;
+set(gca,'fontname','Times New Roman','FontSize',18);
+xlabel([])
+ylabel('PACF')
+title('DT')
+
+
+%% ACF PACF test to find the lags for forecasting
+lags=table(); H=1;
+for k=1:16
+    dt_sa=sa_fill{k}.sa_deseason(5:190);
+%     ti=sa_fill{k}.time(5:190);
+%     dt_tg=sa_fill{k}.tg_deseason(5:190);
+    
+    %ACF
+    [acf,malags,bounds] =  autocorr(dt_sa);
+    % select lag of MA
+    [n,~]=find(abs(acf)<=abs(bounds(1)),1);
+    if malags(n-1)==0
+        lags.ma(H)=1;
+    else
+        lags.ma(H)=malags(n-1);
+    end
+    
+    %PACF
+    [pacf,arlags,bounds] =  parcorr(dt_sa);
+    % select lag of AR
+    [n,~]=find(abs(pacf)<=abs(bounds(1)),1);
+    if arlags(n-1)==0
+        lags.ar(H)=1;
+    else
+        lags.ar(H)=arlags(n-1);
+    end
+    H=H+1;
+end
+
+clearvars malags pacf arlags bounds acf H dt_sa ti dt_tg k n 
+%% 
+
+for k=1:16
+sa_fill{k}.sa=sa_fill{k}.sa_deseason+mean(sa_fill{k}.tg_deseason-sa_fill{k}.sa_deseason,'omitnan');
+end
+
+%% forecasting
+%  
+
+for k=1:16
+forcast{k}=table();
+H=1;
+ 
+ 
+ dt_sa=sa_fill{k}.sa(5:190);
+% t_sa=sa_fill{k}.time(5:190);
+
+    % select Integrated lag  (I)
+    if ~adftest(dt_sa)
+        
+        I=1;
+        while ~adftest(diff(dt_sa,I))
+            I=I+1;
+        end
+    else
+            I=0;
+        end
+    
+%     if I~=2
+%         C=var(dt_sa);
+%     else
+%         C=nan;
+%     end
+%     
+
+%Signal forcast 
+% 
+%          p=0+1;sys(p) = arima('Constant',NaN,'ARLags',1:lags.ar(k),'D',I,'MALags',1:lags.ma(k),'SARLags',12:6:48,'Seasonality',6,'SMALags',6,'Distribution','Gaussian');
+%          p=p+1;sys(p) = arima('Constant',NaN,'ARLags',1:lags.ar(k),'D',I,'MALags',1:lags.ma(k),'SARLags',12:6:48,'Seasonality',12,'SMALags',12,'Distribution','Gaussian');
+%          p=p+1;sys(p) = arima('Constant',NaN,'ARLags',1:lags.ar(k),'D',I,'MALags',1:lags.ma(k),'SARLags',12:6:48,'Seasonality',12,'SMALags',12:6:48,'Distribution','Gaussian');     
+%          p=p+1;sys(p) = arima('Constant',NaN,'ARLags',1:lags.ar(k),'D',I,'MALags',1:lags.ma(k),'SARLags',12:6:48,'Seasonality',6,'SMALags',12:6:48,'Distribution','Gaussian');
+           p=0+1;sys(p) = arima('Constant',NaN,'ARLags',1:lags.ar(k),'D',I,'MALags',1:lags.ma(k),'SARLags',12:6:60,'Seasonality',12,'SMALags',12:6:60,'Distribution','Gaussian');     
+%          p=p+1;sys(p) = arima('Constant',NaN,'ARLags',1:lags.ar(k),'D',I,'MALags',1:lags.ma(k),'SARLags',12:6:72,'Seasonality',12,'SMALags',12:6:72,'Distribution','Gaussian');
+%          p=p+1;sys(p) = arima('Constant',NaN,'ARLags',1:lags.ar(k),'D',I,'MALags',1:lags.ma(k),'SARLags',12:6:72,'Seasonality',12,'SMALags',12:6:72,'Distribution','Gaussian');     
+%          p=p+1;sys(p) = arima('Constant',NaN,'ARLags',1:lags.ar(k),'D',I,'MALags',1:lags.ma(k),'SARLags',12:6:84,'Seasonality',12,'SMALags',12:6:84,'Distribution','Gaussian');     
+%          p=p+1;sys(p) = arima('Constant',NaN,'ARLags',1:lags.ar(k),'D',I,'MALags',1:lags.ma(k),'SARLags',12:6:96,'Seasonality',12,'SMALags',12:6:96,'Distribution','Gaussian');     
+%          p=p+1;sys(p) = arima('Constant',NaN,'ARLags',1:lags.ar(k),'D',I,'MALags',1:lags.ma(k),'SARLags',12:6:108,'Seasonality',12,'SMALags',12:6:108,'Distribution','Gaussian');     
+%          p=p+1;sys(p) = arima('Constant',NaN,'ARLags',1:lags.ar(k),'D',I,'MALags',1:lags.ma(k),'SARLags',12:6:48,'Seasonality',12,'SMALags',12:6:60,'Distribution','Gaussian');     
+%          p=p+1;sys(p) = arima('Constant',NaN,'ARLags',1:lags.ar(k),'D',I,'MALags',1:lags.ma(k),'SARLags',12:6:60,'Seasonality',12,'SMALags',12:6:60,'Distribution','Gaussian');     
+%          p=p+1;sys(p) = arima('Constant',NaN,'ARLags',1:lags.ar(k),'D',I,'MALags',1:lags.ma(k),'SARLags',12:6:60,'Seasonality',6,'SMALags',12:6:60,'Distribution','Gaussian');     
+%          p=p+1;sys(p) = arima('Constant',NaN,'ARLags',1:lags.ar(k),'D',I,'MALags',1:lags.ma(k),'SARLags',12:6:60,'Seasonality',12,'SMALags',12:6:84,'Distribution','Gaussian');     
+%         p=p+1;sys(p) = arima('Constant',NaN,'ARLags',1:lags.ar(k),'D',I,'MALags',1:lags.ma(k),'SARLags',6:6:60,'Seasonality',6,'SMALags',6:6:60,'Distribution','Gaussian');     
+%         p=p+1;sys(p) = arima('Constant',NaN,'ARLags',1:lags.ar(k),'D',I,'MALags',1:lags.ma(k),'SARLags',6:6:60,'Seasonality',3,'SMALags',6:6:60,'Distribution','Gaussian');     
+
+%         
+%         
+%         res{k}=table();
+% 
+%     for j=1:size(sys,2)
+%         [~,~,Loglikehood] = estimate(sys(j),dt_sa);
+%         [res{k}.aic(H,:),res{k}.bic(H,:)] = aicbic(Loglikehood,2,250);
+%         res{k}.name(H,:)=sys(H).Description;
+% 
+%         H=H+1;
+%         clearvars a b Loglikehood
+%     end
+%     res{k}.model=nan(height(res{k}),1);
+%    
+% %     Hh=i+size(sys,2)*(i-1);  
+% %     [n,~]=find(res{k}.aic(Hh:H-1,1)==min(res{k}.aic(Hh:H-1,1)));
+%     [n,~]=find(res{k}.aic==min(res{k}.aic));
+%     n=n(1);
+%     res{k}.model(n)=1;
+
+%     Md_signal = estimate(sys(n),dt_sa);
+        Md_signal = estimate(sys,dt_sa);
+
+            
+len=28; %numel(sa_fill{1, 1}.sa_deseason(191:218))
+
+% forcast table
+forcast{k}.t=sa_fill{k}.time(191:218);
+forcast{k}.tgdt=sa_fill{k}.tg_deseason(191:218);
+forcast{k}.sadt = forecast(Md_signal,len,'Y0',dt_sa);
+clearvars sys Md_signal ar ma I pacf arlags bounds acf malags detail j Hh
+
+end
+
+%   clearvars res forcast sys Md_signal ar ma I pacf arlags bounds acf  malags detail j Hh H rmse_forcast
+
+
+for k=1:16
+    rmse_forcast(k,1)=rms(forcast{k}.tgdt-forcast{k}.sadt,'omitnan');
+end
+
+%% ACF PACF test to find the lags for hindcasting
+lags_hind=table(); H=1;
+for k=1:16
+%     dt_sa=flipud(sa_fill{k}.sa_deseason(219:258));
+        dt_sa=flipud(sa_fill{k}.sa(219:258));
+
+%     ti=flipud(sa_fill{k}.time(219:258));
+%     dt_tg=flipud(sa_fill{k}.tg_deseason(219:258));
+    
+    %ACF
+    [acf,malags,bounds] =  autocorr(dt_sa);
+    % select lag of MA
+    [n,~]=find(abs(acf)<=abs(bounds(1)),1);
+    if malags(n-1)==0
+        lags_hind.ma(H)=1;
+    else
+        lags_hind.ma(H)=malags(n-1);
+    end
+    
+    %PACF
+    [pacf,arlags,bounds] =  parcorr(dt_sa);
+    % select lag of AR
+    [n,~]=find(abs(pacf)<=abs(bounds(1)),1);
+    if arlags(n-1)==0
+        lags_hind.ar(H)=1;
+    else
+        lags_hind.ar(H)=arlags(n-1);
+    end
+    H=H+1;
+end
+
+clearvars malags pacf arlags bounds acf H dt_sa ti dt_tg k n 
+
+%% hindcasting
+
+
+
+for k=1:16
+
+dt_sa=flipud(sa_fill{k}.sa(219:258));
+% t_sa=sa_fill{k}.time(219:258);
+
+%Signal hindcast 
+hindcast{k}=table();
+H=1;
+
+
+    % select Integrated lag  (I)
+    if ~adftest(dt_sa)
+        
+        I=1;
+        while ~adftest(diff(dt_sa,I))
+            I=I+1;
+        end
+    else
+        I=0;
+    end
+    
+%Model
+%         sys(1) = arima('Constant',NaN,'ARLags',1:lags_hind.ar(k),'D',I,'MALags',1:lags_hind.ma(k),'SARLags',12:12:48,'Seasonality',6,'SMALags',6,'Distribution','Gaussian');
+%         sys(2) = arima('Constant',NaN,'ARLags',1:lags_hind.ar(k),'D',I,'MALags',1:lags_hind.ma(k),'SARLags',12:12:48,'Seasonality',12,'SMALags',12,'Distribution','Gaussian');
+%         sys(3) = arima('Constant',NaN,'ARLags',1:lags_hind.ar(k),'D',I,'MALags',1:lags_hind.ma(k),'SARLags',12:12:48,'Seasonality',12,'SMALags',12:12:48,'Distribution','Gaussian');
+%         sys(4) = arima('Constant',NaN,'ARLags',1:lags_hind.ar(k),'D',I,'MALags',1:lags_hind.ma(k),'SARLags',12:12:48,'Seasonality',6,'SMALags',12:12:48,'Distribution','Gaussian');
+%         sys(5) = arima('Constant',NaN,'ARLags',1:lags_hind.ar(k),'D',I,'MALags',1:lags_hind.ma(k),'SARLags',12,'Seasonality',12,'SMALags',12,'Distribution','Gaussian');
+%         sys(6) = arima('Constant',NaN,'ARLags',1:lags_hind.ar(k),'D',I,'MALags',1:lags_hind.ma(k),'SARLags',6,'Seasonality',6,'SMALags',6,'Distribution','Gaussian');
+        sys(1) = arima('Constant',NaN,'ARLags',1:lags_hind.ar(k),'D',I,'MALags',1:lags_hind.ma(k),'Seasonality',6,'Distribution','Gaussian');
+        sys(2) = arima('Constant',NaN,'ARLags',1:lags_hind.ar(k),'D',I,'MALags',1:lags_hind.ma(k),'Seasonality',12,'Distribution','Gaussian');
+        sys(3) = arima('Constant',NaN,'ARLags',1:lags_hind.ar(k),'D',I,'MALags',1:lags_hind.ma(k));
+	    sys(4) = arima('Constant',NaN,'ARLags',1:lags_hind.ar(k)+1,'D',I,'MALags',1:lags_hind.ma(k)+1);
+        sys(5) = arima('Constant',NaN,'ARLags',1:lags_hind.ar(k)+1,'D',I,'MALags',1:lags_hind.ma(k));
+        sys(6) = arima('Constant',NaN,'ARLags',1:lags_hind.ar(k),'D',I,'MALags',1:lags_hind.ma(k)+1);
+%         sys(13) = arima('Constant',1,'ARLags',1:lags_hind.ar(k),'D',I,'MALags',1:lags_hind.ma(k)+1);
+%         sys(14) = arima('Constant',0,'ARLags',1:lags_hind.ar(k),'D',I,'MALags',1:lags_hind.ma(k)+1);
+%         sys(15) = arima('Constant',NaN,'ARLags',1:lags_hind.ar(k),'D',I,'MALags',1:lags_hind.ma(k),'SARLags',12:6:48,'Seasonality',6,'SMALags',6,'Distribution','Gaussian');
+%         sys(16) = arima('Constant',NaN,'ARLags',1:lags_hind.ar(k),'D',I,'MALags',1:lags_hind.ma(k),'SARLags',12:6:48,'Seasonality',12,'SMALags',12,'Distribution','Gaussian');
+%         sys(17) = arima('Constant',NaN,'ARLags',1:lags_hind.ar(k),'D',I,'MALags',1:lags_hind.ma(k),'SARLags',12:6:48,'Seasonality',12,'SMALags',12:6:48,'Distribution','Gaussian');
+%         sys(18) = arima('Constant',NaN,'ARLags',1:lags_hind.ar(k),'D',I,'MALags',1:lags_hind.ma(k),'SARLags',12:6:48,'Seasonality',6,'SMALags',12:6:48,'Distribution','Gaussian');
+%         sys(19) = arima('Constant',NaN,'ARLags',1:lags_hind.ar(k)+1,'D',I,'MALags',1:lags_hind.ma(k),'Seasonality',6,'Distribution','Gaussian');
+%         sys(20) = arima('Constant',NaN,'ARLags',1:lags_hind.ar(k)+1,'D',I,'MALags',1:lags_hind.ma(k)+1,'Seasonality',12,'Distribution','Gaussian');
+%         sys(21) = arima('Constant',NaN,'ARLags',1:lags_hind.ar(k),'D',I,'MALags',1:lags_hind.ma(k)+1,'Seasonality',12,'Distribution','Gaussian');
+
+
+%         res{k}=table();
+
+
+    for j=1:size(sys,2)
+        [~,~,Loglikehood] = estimate(sys(j),dt_sa);
+        [res{k}.hindaic(H,:),res{k}.hindbic(H,:)] = aicbic(Loglikehood,2,250);
+        res{k}.hindname(H,:)=sys(H).Description;
+
+        H=H+1;
+        clearvars a b Loglikehood
+    end
+    
+        res{k}.hindmodel=nan(height(res{k}),1);
+   
+%     Hh=i+size(sys,2)*(i-1);  
+%     [n,~]=find(res{k}.aic(Hh:H-1,1)==min(res{k}.aic(Hh:H-1,1)));
+    [n,~]=find(res{k}.hindaic==min(res{k}.hindaic));
+    res{k}.hindmodel(n)=1;
+    Md_signal = estimate(sys(n),dt_sa);
+            
+len=28; %numel(sa_fill{1, 1}.sa_deseason(191:218))
+
+
+% forcast table
+hindcast{k}.t=sa_fill{k}.time(191:218);
+hindcast{k}.tgdt=sa_fill{k}.tg_deseason(191:218);
+hindcast{k}.sadt = flipud(forecast(Md_signal,len,'Y0',dt_sa));
+clearvars sys Md_signal ar ma I pacf arlags bounds acf malags detail j Hh n
+end
+
+% clearvars res hindcast sys Md_signal ar ma I pacf arlags bounds acf  malags detail j Hh H rmse_forcast
+
+
+ rmse_forcast(:,2)=0;
+ 
+for k=1:16
+    rmse_forcast(k,2)=rms(hindcast{k}.tgdt-hindcast{k}.sadt,'omitnan');
+end
+
+%% bi-directional 
+
+for k=1:16
+    bi{k}=table();
+    bi{k}.t=hindcast{k}.t;
+    bi{k}.tgdt=hindcast{k}.tgdt;
+    for i=1:height(forcast{k})
+        dt(i,1)=mean([hindcast{k}.sadt(i),forcast{k}.sadt(i)]);
+    end
+    bi{k}.sadt=dt;
+    clear dt
+end
+
+for k=1:16
+    rmse_bi(k,1)=rms(bi{k}.tgdt-bi{k}.sadt,'omitnan');
+end
+
+ rmse_forcast(:,3)=0;
+
+for k=1:16
+    rmse_forcast(k,3)=rms(sa_fill{k}.sa-sa_fill{k}.tg_deseason,'omitnan');
+end
+
+
+
+
+%% plot data
+
+
+k=3;
+% plot(sa_fill{k}.time(1:259),fillgaps(sa_fill{k}.sa(1:259)),'-r','DisplayName','SA_{original}','LineWidth',1.5)
+plot(sa_fill{k}.time,sa_fill{k}.tg_deseason,'-','color',[.7 .7 .7],'DisplayName','TG_{deseason}','LineWidth',1.5)
+hold on
+plot(sa_fill{k}.time,sa_fill{k}.sa,'-','color',[0 0.4470 0.7410],'DisplayName',strcat('SA_{original}- RMSE=',num2str(rms(sa_fill{k}.sa-sa_fill{k}.tg_deseason,'omitnan'),2),'[cm]'),'LineWidth',1.5)
+
+plot(hindcast{k}.t,hindcast{k}.sadt,'-','color',[0.4660 0.6740 0.1880],'DisplayName',strcat('SA_{hindcast}- RMSE=',num2str(rms(hindcast{k}.sadt-hindcast{k}.tgdt,'omitnan'),2),'[cm]'),'LineWidth',1.5)
+plot(forcast{k}.t,forcast{k}.sadt,'-','color',[0.6350 0.0780 0.1840],'DisplayName',strcat('SA_{forecast}- RMSE=',num2str(rms(forcast{k}.sadt-forcast{k}.tgdt,'omitnan'),2),'[cm]'),'LineWidth',1.5)
+
+intp_t=[sa_fill{k}.time(5:190);sa_fill{k}.time(219:258)];
+intp_sa=[sa_fill{k}.sa(5:190);sa_fill{k}.sa(219:258)];
+
+a=interp1(decyear(intp_t),intp_sa,decyear(sa_fill{k}.time((191:218))));
+plot(hindcast{k}.t,a,'-','color',[0.4940 0.1840 0.5560],'DisplayName',strcat('SA_{interp1}- RMSE=',num2str(rms(a-forcast{k}.tgdt,'omitnan'),2),'[cm]'),'LineWidth',1.5)
+
+
+ylabel('DT [cm]')
+xlabel([])
+xticks(datetime('01-Jan-1995'):calyears(2):datetime('01-Jan-2020'))
+
+ax=gca; ax.GridAlpha = 0.3; ax.FontSize=20; ax.FontWeight='Bold'; grid on;  ax.FontName='Times New Roman'; %grid minor;
+set(gca,'fontname','Times New Roman','FontSize',20);
+legend show
+
+
+%% 
+
+plot(rmse_forcast(:,1),'DisplayName','gapped-filled data','LineWidth',1.5)
+hold on
+plot(rmse_forcast(:,3),'DisplayName','original data','LineWidth',1.5)
+
+
+
+
+ylabel('RMSE [cm]')
+xlabel('TG ID')
+xticks([1:1:16])
+
+ax=gca; ax.GridAlpha = 0.3; ax.FontSize=20; ax.FontWeight='Bold'; grid on;  ax.FontName='Times New Roman'; %grid minor;
+set(gca,'fontname','Times New Roman','FontSize',20);
+legend show
